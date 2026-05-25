@@ -1,0 +1,1 @@
+<template><main class="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-10"><div class="w-full max-w-md card"><router-link to="/" class="text-sm font-semibold text-slate-500">Memorial Service</router-link><slot /></div></main></template>
