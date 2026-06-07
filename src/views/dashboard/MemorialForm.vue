@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, uploadImage } from '../../api/client';
 import DashboardLayout from '../../layouts/DashboardLayout.vue';
@@ -11,6 +11,21 @@ const id = computed(() => route.params.id);
 const error = ref('');
 const uploadingMainPhoto = ref(false);
 const qrBoxRef = ref(null);
+const autosaveStatus = ref('');
+const autosaveTimer = ref(null);
+const isAutosaving = ref(false);
+const activeTab = ref('main');
+
+const tabs = [
+    { key: 'main', label: 'Основное' },
+    { key: 'facts', label: 'Факты' },
+    { key: 'bio', label: 'Биография' },
+    { key: 'timeline', label: 'Хронология' },
+    { key: 'photos', label: 'Фото' },
+    { key: 'life', label: 'Этапы жизни' },
+    { key: 'qualities', label: 'Качества' },
+    { key: 'quotes', label: 'Воспоминания' },
+];
 
 const form = reactive({
     full_name: '',
@@ -65,6 +80,30 @@ const save = async () => {
         router.push('/dashboard');
     } catch (e) {
         error.value = e.response?.data?.message || 'Ошибка сохранения';
+    }
+};
+
+const autosave = async () => {
+    if (!id.value) return;
+    if (isAutosaving.value) return;
+
+    try {
+        isAutosaving.value = true;
+        error.value = '';
+
+        await api.put(`/memorials/${id.value}`, form);
+
+        const now = new Date().toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+
+        autosaveStatus.value = `Автосохранено в ${now}`;
+    } catch (e) {
+        autosaveStatus.value = 'Ошибка автосохранения';
+        error.value = e.response?.data?.message || 'Ошибка автосохранения';
+    } finally {
+        isAutosaving.value = false;
     }
 };
 
@@ -192,10 +231,57 @@ const removeLifeSection = (index) => {
     form.life_sections.splice(index, 1);
 };
 
-onMounted(load);
+const approveQuote = async (quote) => {
+    if (!quote.id) return;
+
+    await api.post(`/memorial-quotes/${quote.id}/approve`);
+
+    quote.status = 'approved';
+};
+
+const rejectQuote = async (quote) => {
+    if (!quote.id) return;
+
+    await api.post(`/memorial-quotes/${quote.id}/reject`);
+
+    quote.status = 'rejected';
+};
+
+const deleteQuote = async (quote, index) => {
+    if (!confirm('Удалить воспоминание?')) return;
+
+    if (quote.id) {
+        await api.delete(`/memorial-quotes/${quote.id}`);
+    }
+
+    form.quotes.splice(index, 1);
+};
+
+onMounted(async () => {
+    await load();
+
+    if (id.value) {
+        autosaveTimer.value = setInterval(autosave, 15 * 60 * 1000);
+    }
+});
+
+onBeforeUnmount(() => {
+    if (autosaveTimer.value) {
+        clearInterval(autosaveTimer.value);
+    }
+});
 </script>
 <template>
     <DashboardLayout>
+        <div
+            v-if="id"
+            class="mb-6 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-sm text-blue-700"
+        >
+            Автосохранение включено: изменения сохраняются каждые 15 минут.
+            <span v-if="isAutosaving" class="font-semibold"> Идет сохранение...</span>
+            <span v-else-if="autosaveStatus" class="font-semibold"> {{ autosaveStatus }}</span>
+        </div>
+
         <div class="mb-6">
             <router-link to="/dashboard" class="text-sm font-semibold text-slate-500"
                 >← Назад</router-link
@@ -205,7 +291,26 @@ onMounted(load);
 
         <form class="grid gap-6 lg:grid-cols-[1fr_360px]" @submit.prevent="save">
             <div class="space-y-6">
-                <section class="card space-y-4">
+                <div class="sticky top-0 z-20 rounded-2xl bg-white p-2 shadow-sm">
+                    <div class="flex gap-2 overflow-x-auto">
+                        <button
+                            v-for="tab in tabs"
+                            :key="tab.key"
+                            type="button"
+                            class="whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition"
+                            :class="
+                                activeTab === tab.key
+                                    ? 'bg-slate-900 text-white'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            "
+                            @click="activeTab = tab.key"
+                        >
+                            {{ tab.label }}
+                        </button>
+                    </div>
+                </div>
+
+                <section v-if="activeTab === 'main'" class="card space-y-4">
                     <h2 class="text-xl font-bold">Основная информация</h2>
                     
                     <label class="block">
@@ -243,7 +348,7 @@ onMounted(load);
                     </label>                    
                 </section>
 
-                <section class="card space-y-4">
+                <section v-if="activeTab === 'facts'" class="card space-y-4">
                     <div class="space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="label">Факты</span>
@@ -286,12 +391,12 @@ onMounted(load);
                     </div>
                 </section>
 
-                <section class="card space-y-4">
+                <section v-if="activeTab === 'bio'" class="card space-y-4">
                     <h2 class="text-xl font-bold">Биография</h2>
                     <textarea class="input min-h-48" v-model="form.biography"></textarea>
                 </section>
 
-                <section class="card space-y-4">
+                <section v-if="activeTab === 'timeline'" class="card space-y-4">
                     <div class="flex justify-between">
                         <h2 class="text-xl font-bold">Хронология</h2>
                         <button type="button" class="btn-secondary !py-2" @click="addTimeline">Добавить</button>
@@ -302,7 +407,7 @@ onMounted(load);
                     </div>
                 </section>
 
-                <section class="card space-y-4">
+                <section v-if="activeTab === 'photos'" class="card space-y-4">
                     <div class="flex justify-between">
                         <h2 class="text-xl font-bold">Фото</h2>
 
@@ -316,7 +421,7 @@ onMounted(load);
                     </div>
                 </section>
 
-                <section class="card space-y-4">
+                <section v-if="activeTab === 'life'" class="card space-y-4">
                     <div class="flex items-center justify-between">
 
                         <div>
@@ -373,7 +478,7 @@ onMounted(load);
                     </div>
                 </section>
 
-                <section class="card space-y-4">
+                <section v-if="activeTab === 'qualities'" class="card space-y-4">
                     <div class="flex items-center justify-between">
                         <h2 class="text-xl font-bold">Качества</h2>
 
@@ -407,15 +512,72 @@ onMounted(load);
                     </div>
                 </section>
 
-                <section class="card space-y-4">
+                <section v-if="activeTab === 'quotes'" class="card space-y-4">
                     <div class="flex justify-between">
                         <h2 class="text-xl font-bold">Воспоминания</h2>
                         <button type="button" class="btn-secondary !py-2" @click="addQuote">Добавить</button>
                     </div>
-                    <div v-for="(item, i) in form.quotes" :key="i" class="grid gap-3 rounded-2xl bg-slate-50 p-4">
+
+                    <div
+                        v-for="(item, i) in form.quotes"
+                        :key="item.id || i"
+                        class="grid gap-3 rounded-2xl bg-slate-50 p-4"
+                        :class="{
+                            'border border-yellow-300 bg-yellow-50': item.status === 'pending',
+                            'border border-green-200 bg-green-50': item.status === 'approved',
+                            'border border-red-200 bg-red-50': item.status === 'rejected',
+                        }"
+                    >
+                        <div class="flex items-center justify-between gap-3">
+                            <span
+                                class="rounded-full px-3 py-1 text-xs font-semibold"
+                                :class="{
+                                    'bg-yellow-100 text-yellow-700': item.status === 'pending',
+                                    'bg-green-100 text-green-700': item.status === 'approved' || !item.status,
+                                    'bg-red-100 text-red-700': item.status === 'rejected',
+                                }"
+                            >
+                                {{
+                                    item.status === 'pending'
+                                        ? 'На модерации'
+                                        : item.status === 'rejected'
+                                            ? 'Отклонено'
+                                            : 'Одобрено'
+                                }}
+                            </span>
+
+                            <button
+                                type="button"
+                                class="text-sm text-red-500"
+                                @click="deleteQuote(item, i)"
+                            >
+                                Удалить
+                            </button>
+                        </div>
+
                         <input class="input" v-model="item.author_name" placeholder="Автор" />
                         <input class="input" v-model="item.author_relation" placeholder="Кем приходится" />
                         <textarea class="input" v-model="item.text" placeholder="Текст"></textarea>
+
+                        <div v-if="item.id" class="flex flex-wrap gap-3">
+                            <button
+                                v-if="item.status !== 'approved'"
+                                type="button"
+                                class="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white"
+                                @click="approveQuote(item)"
+                            >
+                                Одобрить
+                            </button>
+
+                            <button
+                                v-if="item.status !== 'rejected'"
+                                type="button"
+                                class="rounded-xl bg-red-100 px-4 py-2 text-sm font-semibold text-red-600"
+                                @click="rejectQuote(item)"
+                            >
+                                Отклонить
+                            </button>
+                        </div>
                     </div>
                 </section>
             </div>
