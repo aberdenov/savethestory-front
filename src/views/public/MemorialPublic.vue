@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { ref, reactive, computed, onMounted } from 'vue';
 import { useRoute } from "vue-router";
 import { api } from "../../api/client";
 
@@ -7,6 +7,23 @@ const route = useRoute();
 const memorial = ref(null);
 const loading = ref(true);
 const error = ref("");
+
+const quoteForm = reactive({
+    author_name: '',
+    author_relation: '',
+    text: '',
+});
+
+const quoteSuccess = ref(false);
+
+const sendQuote = async () => {
+    await api.post(`/public/memorials/${memorial.value.id}/quotes`, quoteForm);
+
+    quoteForm.author_name = '';
+    quoteForm.author_relation = '';
+    quoteForm.text = '';
+    quoteSuccess.value = true;
+};
 
 const formatDate = (v) =>
     v
@@ -177,6 +194,38 @@ onMounted(async () => {
                         </footer>
                     </blockquote>
                 </div>
+
+                <form class="mt-10 rounded-3xl bg-white p-6 text-black" @submit.prevent="sendQuote">
+                    <h3 class="text-2xl font-bold">Оставить воспоминание</h3>
+
+                    <input
+                        v-model="quoteForm.author_name"
+                        class="mt-5 w-full rounded-2xl border px-4 py-3"
+                        placeholder="Ваше имя"
+                        required
+                    />
+
+                    <input
+                        v-model="quoteForm.author_relation"
+                        class="mt-4 w-full rounded-2xl border px-4 py-3"
+                        placeholder="Кем вы приходитесь"
+                    />
+
+                    <textarea
+                        v-model="quoteForm.text"
+                        class="mt-4 min-h-32 w-full rounded-2xl border px-4 py-3"
+                        placeholder="Ваше воспоминание"
+                        required
+                    ></textarea>
+
+                    <button class="mt-5 rounded-full bg-black px-6 py-3 text-white">
+                        Отправить на модерацию
+                    </button>
+
+                    <p v-if="quoteSuccess" class="mt-4 text-sm text-green-600">
+                        Спасибо. Ваше воспоминание появится после модерации.
+                    </p>
+                </form>
             </section>
 
             <section class="mx-auto max-w-7xl px-5 py-24 text-center">
