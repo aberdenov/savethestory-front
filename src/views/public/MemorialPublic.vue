@@ -62,7 +62,7 @@ onMounted(async () => {
                             Светлая память • История жизни
                         </div>
 
-                        <h1 class="font-serif font-bold text-5xl leading-none tracking-tight md:text-7xl">
+                        <h1 class="font-serif font-bold text-3xl leading-none tracking-tight md:text-7xl">
                             {{ memorial.full_name }}
                         </h1>
                         <p class="mt-5 text-xl text-[#d7dce6]">
@@ -98,7 +98,7 @@ onMounted(async () => {
             <section id="story" class="mx-auto max-w-7xl px-5 py-20">
                 <div class="mb-8">
                     <p class="text-sm font-bold uppercase tracking-[.18em] text-[#d6b27b]">История</p>
-                    <h2 class="mt-3 font-serif font-bold text-5xl">Жизнь, в которой было много движения, тепла и людей</h2>
+                    <h2 class="mt-3 font-serif font-bold text-3xl md:text-5xl">Жизнь, в которой было много движения, тепла и людей</h2>
                 </div>
 
                 <div class="grid gap-6 lg:grid-cols-[1.1fr_.9fr]">
@@ -118,7 +118,7 @@ onMounted(async () => {
             <section id="story" class="mx-auto max-w-7xl px-5 py-20">
                 <div class="mb-8">
                     <p class="text-sm font-bold uppercase tracking-[.18em] text-[#d6b27b]">Путь</p>
-                    <h2 class="mt-3 font-serif font-bold text-5xl">Ключевые этапы его истории</h2>
+                    <h2 class="mt-3 font-serif font-bold text-3xl md:text-5xl">Ключевые этапы его истории</h2>
                 </div>
                 
                 <div class="rounded-[28px] border border-white/10 bg-white/[.04] p-7 md:p-8">
@@ -151,7 +151,7 @@ onMounted(async () => {
             <section class="mx-auto max-w-7xl px-5 py-20">
                 <div class="mb-8">
                     <p class="text-sm font-bold uppercase tracking-[.18em] text-[#d6b27b]">Галерея</p>
-                    <h2 class="mt-3 font-serif text-4xl md:text-5xl">Моменты, в которых чувствуется его характер</h2>
+                    <h2 class="mt-3 font-serif text-4xl text-3xl md:text-5xl">Моменты, в которых чувствуется его характер</h2>
                     <p class="max-w-[760px] m-0 text-[18px] text-[#B4BAC7]">Дружба, семья, праздники, искренний смех, лёгкость и любовь к жизни.</p>
                 </div>
 
@@ -181,7 +181,7 @@ onMounted(async () => {
             <section id="memories" class="mx-auto max-w-7xl px-5 py-20">
                 <div class="mb-8">
                     <p class="text-sm font-bold uppercase tracking-[.18em] text-[#d6b27b]">Память близких</p>
-                    <h2 class="mt-3 font-serif font-bold text-5xl ">Каким его вспоминают друзья и родные</h2>
+                    <h2 class="mt-3 font-serif font-bold text-3xl md:text-5xl">Каким его вспоминают друзья и родные</h2>
                     <p class="max-w-[760px] m-0 text-[18px] text-[#B4BAC7]">В этих словах — неформальная правда о человеке: надёжность, юмор, глубина, свет и редкое умение делать рядом теплее.</p>
                 </div>
                 <div class="grid gap-5 md:grid-cols-2">
@@ -230,7 +230,7 @@ onMounted(async () => {
 
             <section class="mx-auto max-w-7xl px-5 py-24 text-center">
                 <div class="rounded-[32px] border border-white/10 bg-white/[.04] p-10">
-                    <h3 class="font-serif font-bold text-4xl">Некоторые люди уходят слишком рано.<br>Но их свет остаётся надолго.</h3>
+                    <h3 class="font-serif font-bold text-3xl md:text-4xl">Некоторые люди уходят слишком рано.<br>Но их свет остаётся надолго.</h3>
                 </div>
             </section>
         </template>

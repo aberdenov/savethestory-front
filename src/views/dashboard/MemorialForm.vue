@@ -289,26 +289,28 @@ onBeforeUnmount(() => {
             <h1 class="mt-2 text-3xl font-bold">{{ id ? 'Редактировать анкету' : 'Новая анкета' }}</h1>
         </div>
 
+        <div class="rounded-2xl bg-white p-2 shadow-sm mb-6">
+            <div class="flex flex-wrap gap-2 overflow-x-auto">
+                <button
+                    v-for="tab in tabs"
+                    :key="tab.key"
+                    type="button"
+                    class="whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition"
+                    :class="
+                        activeTab === tab.key
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    "
+                    @click="activeTab = tab.key"
+                >
+                    {{ tab.label }}
+                </button>
+            </div>
+        </div>
+        
         <form class="grid gap-6 lg:grid-cols-[1fr_360px]" @submit.prevent="save">
             <div class="space-y-6">
-                <div class="sticky top-0 z-20 rounded-2xl bg-white p-2 shadow-sm">
-                    <div class="flex gap-2 overflow-x-auto">
-                        <button
-                            v-for="tab in tabs"
-                            :key="tab.key"
-                            type="button"
-                            class="whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition"
-                            :class="
-                                activeTab === tab.key
-                                    ? 'bg-slate-900 text-white'
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            "
-                            @click="activeTab = tab.key"
-                        >
-                            {{ tab.label }}
-                        </button>
-                    </div>
-                </div>
+                
 
                 <section v-if="activeTab === 'main'" class="card space-y-4">
                     <h2 class="text-xl font-bold">Основная информация</h2>
