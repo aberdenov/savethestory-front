@@ -1,5 +1,11 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import {
+    computed,
+    onBeforeUnmount,
+    onMounted,
+    reactive,
+    ref,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, uploadImage } from '../../api/client';
 import DashboardLayout from '../../layouts/DashboardLayout.vue';
@@ -7,6 +13,7 @@ import QrcodeVue from 'qrcode.vue';
 
 const route = useRoute();
 const router = useRouter();
+
 const id = computed(() => route.params.id);
 const error = ref('');
 const uploadingMainPhoto = ref(false);
@@ -16,16 +23,65 @@ const autosaveTimer = ref(null);
 const isAutosaving = ref(false);
 const activeTab = ref('main');
 
+const packageCode = ref('free');
+const uploadingAsset = ref(false);
+const assets = ref([]);
+
+const plans = {
+    free: {
+        name: 'Free (социальный)',
+        bioLimit: 200,
+        media: false,
+        guestbook: false,
+    },
+    memory: {
+        name: 'Память (входной)',
+        bioLimit: null,
+        media: false,
+        guestbook: false,
+    },
+    history: {
+        name: 'История (основной)',
+        bioLimit: null,
+        media: true,
+        guestbook: false,
+    },
+    legacy: {
+        name: 'Наследие (премиум)',
+        bioLimit: null,
+        media: true,
+        guestbook: true,
+    },
+};
+
+const currentPlan = computed(
+    () => plans[packageCode.value] || plans.free,
+);
+
 const tabs = [
     { key: 'main', label: 'Основное' },
     { key: 'facts', label: 'Факты' },
     { key: 'bio', label: 'Биография' },
     { key: 'timeline', label: 'Хронология' },
-    { key: 'photos', label: 'Фото' },
+    { key: 'photos', label: 'Галерея' },
     { key: 'life', label: 'Этапы жизни' },
     { key: 'qualities', label: 'Качества' },
     { key: 'quotes', label: 'Воспоминания' },
 ];
+
+const visibleTabs = computed(() => {
+    if (packageCode.value === 'free' || packageCode.value === 'memory') {
+        return tabs.filter((tab) =>
+            ['main', 'bio'].includes(tab.key),
+        );
+    }
+
+    if (packageCode.value === 'history') {
+        return tabs.filter((tab) => tab.key !== 'quotes');
+    }
+
+    return tabs;
+});
 
 const form = reactive({
     full_name: '',
@@ -37,8 +93,9 @@ const form = reactive({
     biography: '',
     closing_text: '',
     facts: [
-        { 
-            title: 'Человек света', text: 'Близкие вспоминают его как открытого и доброго человека.' 
+        {
+            title: 'Человек света',
+            text: 'Близкие вспоминают его как открытого и доброго человека.',
         },
     ],
     qualities: ['Доброта', 'Сила', 'Любовь к жизни'],
@@ -46,17 +103,30 @@ const form = reactive({
     timelines: [],
     quotes: [],
     life_sections: [],
+    assets: [],
 });
 
-const addPhoto = () => form.photos.push({ image: '', caption: '' });
-const addTimeline = () => form.timelines.push({ period: '', description: '' });
-const addQuote = () => form.quotes.push({ author_name: '', author_relation: '', text: '' });
+const addPhoto = () => {
+    form.photos.push({ image: '', caption: '' });
+};
+
+const addTimeline = () => {
+    form.timelines.push({ period: '', description: '' });
+};
+
+const addQuote = () => {
+    form.quotes.push({
+        author_name: '',
+        author_relation: '',
+        text: '',
+    });
+};
 
 const load = async () => {
     if (!id.value) return;
-    
+
     const { data } = await api.get(`/memorials/${id.value}`);
-    
+
     Object.assign(form, {
         ...data,
         birth_date: data.birth_date || '',
@@ -67,16 +137,34 @@ const load = async () => {
         timelines: data.timelines || [],
         quotes: data.quotes || [],
         life_sections: data.life_sections || data.lifeSections || [],
+        assets: data.assets || [],
     });
+
+    packageCode.value = data.package_code || 'free';
+
+    // Эти поля отправлять обратно при сохранении нельзя.
+    delete form.package_code;
+    delete form.package_started_at;
+    delete form.hosting_expires_at;
+
+    assets.value = data.assets || [];
+};
+
+const savePayload = () => {
+    const { slug, ...payload } = form;
+    return payload;
 };
 
 const save = async () => {
     try {
         error.value = '';
 
-        if (id.value) await api.put(`/memorials/${id.value}`, form);
-            else await api.post('/memorials', form);
-        
+        if (id.value) {
+            await api.put(`/memorials/${id.value}`, savePayload());
+        } else {
+            await api.post('/memorials', savePayload());
+        }
+
         router.push('/dashboard');
     } catch (e) {
         error.value = e.response?.data?.message || 'Ошибка сохранения';
@@ -84,14 +172,13 @@ const save = async () => {
 };
 
 const autosave = async () => {
-    if (!id.value) return;
-    if (isAutosaving.value) return;
+    if (!id.value || isAutosaving.value) return;
 
     try {
         isAutosaving.value = true;
         error.value = '';
 
-        await api.put(`/memorials/${id.value}`, form);
+        await api.put(`/memorials/${id.value}`, savePayload());
 
         const now = new Date().toLocaleTimeString('ru-RU', {
             hour: '2-digit',
@@ -101,7 +188,8 @@ const autosave = async () => {
         autosaveStatus.value = `Автосохранено в ${now}`;
     } catch (e) {
         autosaveStatus.value = 'Ошибка автосохранения';
-        error.value = e.response?.data?.message || 'Ошибка автосохранения';
+        error.value =
+            e.response?.data?.message || 'Ошибка автосохранения';
     } finally {
         isAutosaving.value = false;
     }
@@ -114,31 +202,109 @@ const handleMainPhotoUpload = async (event) => {
 
     try {
         uploadingMainPhoto.value = true;
-
         form.main_photo = await uploadImage(file);
-    } catch (e) {      
+    } catch (e) {
         console.log(e);
-
-        error.value = e.response?.data?.message || 'Не удалось загрузить фото';
+        error.value =
+            e.response?.data?.message || 'Не удалось загрузить фото';
         alert(error.value);
     } finally {
         uploadingMainPhoto.value = false;
     }
 };
 
-const handleGalleryPhotoUpload = async (event, item) => {
+const handleGalleryMediaUpload = async (event, item) => {
     const file = event.target.files?.[0];
 
     if (!file) return;
 
+    if (!id.value) {
+        error.value =
+            'Сначала сохраните анкету, затем загрузите файл в галерею.';
+        return;
+    }
+
     try {
-        item.image = await uploadImage(file);
+        uploadingAsset.value = true;
+        error.value = '';
+        const body = new FormData();
+        body.append('file', file);
+
+        if (item.caption) {
+            body.append('caption', item.caption);
+        }
+
+        const { data } = await api.post(
+            `/memorials/${id.value}/media`,
+            body,
+            {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            },
+        );
+
+        assets.value.push(data.asset);
+
+        const index = form.photos.indexOf(item);
+        if (index !== -1) {
+            form.photos.splice(index, 1);
+        }
     } catch (e) {
         console.log(e);
-
-        error.value = 'Не удалось загрузить фото';
+        error.value = e.response?.data?.message || 'Не удалось загрузить файл';
         alert(error.value);
+    } finally {
+        uploadingAsset.value = false;
+        event.target.value = '';
     }
+};
+
+const handleAssetUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+
+    if (!id.value) {
+        error.value =
+            'Сначала сохраните анкету, затем загрузите медиафайл.';
+        return;
+    }
+
+    try {
+        uploadingAsset.value = true;
+
+        const body = new FormData();
+        body.append('file', file);
+
+        const { data } = await api.post(
+            `/memorials/${id.value}/media`,
+            body,
+            {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            },
+        );
+
+        assets.value.push(data.asset);
+    } catch (e) {
+        error.value =
+            e.response?.data?.message || 'Не удалось загрузить файл';
+    } finally {
+        uploadingAsset.value = false;
+    }
+};
+
+const deleteAsset = async (asset, index) => {
+    if (!confirm('Удалить файл?')) return;
+
+    await api.delete(
+        `/memorials/${id.value}/media/${asset.id}`,
+    );
+
+    assets.value.splice(index, 1);
 };
 
 const addFact = () => {
@@ -159,7 +325,8 @@ const removeFact = (index) => {
 const publicUrl = computed(() => {
     if (!form.slug) return '';
 
-    const siteOrigin = import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
+    const siteOrigin =
+        import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin;
 
     return `${siteOrigin}/m/${form.slug}`;
 });
@@ -171,8 +338,6 @@ const downloadQr = async () => {
         alert('QR-код еще не готов');
         return;
     }
-
-    const originalValue = publicUrl.value;
 
     const bigCanvas = document.createElement('canvas');
     const size = 2000;
@@ -186,14 +351,12 @@ const downloadQr = async () => {
     ctx.fillRect(0, 0, size, size);
 
     const img = new Image();
-
     img.src = canvas.toDataURL('image/png');
 
     img.onload = () => {
         ctx.drawImage(img, 0, 0, size, size);
 
         const link = document.createElement('a');
-
         link.download = `memorial-${form.slug || 'qr'}-qr.png`;
         link.href = bigCanvas.toDataURL('image/png');
 
@@ -235,7 +398,6 @@ const approveQuote = async (quote) => {
     if (!quote.id) return;
 
     await api.post(`/memorial-quotes/${quote.id}/approve`);
-
     quote.status = 'approved';
 };
 
@@ -243,7 +405,6 @@ const rejectQuote = async (quote) => {
     if (!quote.id) return;
 
     await api.post(`/memorial-quotes/${quote.id}/reject`);
-
     quote.status = 'rejected';
 };
 
@@ -271,6 +432,7 @@ onBeforeUnmount(() => {
     }
 });
 </script>
+
 <template>
     <DashboardLayout>
         <div
@@ -278,21 +440,31 @@ onBeforeUnmount(() => {
             class="mb-6 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-sm text-blue-700"
         >
             Автосохранение включено: изменения сохраняются каждые 15 минут.
-            <span v-if="isAutosaving" class="font-semibold"> Идет сохранение...</span>
-            <span v-else-if="autosaveStatus" class="font-semibold"> {{ autosaveStatus }}</span>
+            <span v-if="isAutosaving" class="font-semibold">
+                Идет сохранение...
+            </span>
+            <span v-else-if="autosaveStatus" class="font-semibold">
+                {{ autosaveStatus }}
+            </span>
         </div>
 
         <div class="mb-6">
-            <router-link to="/dashboard" class="text-sm font-semibold text-slate-500"
-                >← Назад</router-link
+            <router-link
+                to="/dashboard"
+                class="text-sm font-semibold text-slate-500"
             >
-            <h1 class="mt-2 text-3xl font-bold">{{ id ? 'Редактировать анкету' : 'Новая анкета' }}</h1>
+                ← Назад
+            </router-link>
+
+            <h1 class="mt-2 text-3xl font-bold">
+                {{ id ? 'Редактировать анкету' : 'Новая анкета' }}
+            </h1>
         </div>
 
-        <div class="rounded-2xl bg-white p-2 shadow-sm mb-6">
+        <div class="mb-6 rounded-2xl bg-white p-2 shadow-sm">
             <div class="flex flex-wrap gap-2 overflow-x-auto">
                 <button
-                    v-for="tab in tabs"
+                    v-for="tab in visibleTabs"
                     :key="tab.key"
                     type="button"
                     class="whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition"
@@ -307,54 +479,108 @@ onBeforeUnmount(() => {
                 </button>
             </div>
         </div>
-        
-        <form class="grid gap-6 lg:grid-cols-[1fr_360px]" @submit.prevent="save">
-            <div class="space-y-6">
-                
 
-                <section v-if="activeTab === 'main'" class="card space-y-4">
-                    <h2 class="text-xl font-bold">Основная информация</h2>
-                    
+        <form
+            class="grid gap-6 lg:grid-cols-[1fr_360px]"
+            @submit.prevent="save"
+        >
+            <div class="space-y-6">
+                <section
+                    v-if="activeTab === 'main'"
+                    class="card space-y-4"
+                >
+                    <h2 class="text-xl font-bold">
+                        Основная информация
+                    </h2>
+
                     <label class="block">
                         <span class="label">ФИО</span>
-                        <input class="input mt-1" v-model="form.full_name" />
-                    </label>
-
-                    <label class="block">
-                        <span class="label">Slug</span>
-                        <input class="input mt-1" v-model="form.slug" placeholder="pak-kirill"/>
+                        <input
+                            class="input mt-1"
+                            v-model="form.full_name"
+                        />
                     </label>
 
                     <div class="grid gap-4 md:grid-cols-2">
                         <label>
                             <span class="label">Дата рождения</span>
-                            <input class="input mt-1" type="date" v-model="form.birth_date" />
+                            <input
+                                class="input mt-1"
+                                type="date"
+                                v-model="form.birth_date"
+                            />
                         </label>
-                        
+
                         <label>
                             <span class="label">Дата смерти</span>
-                            <input class="input mt-1" type="date" v-model="form.death_date" />
+                            <input
+                                class="input mt-1"
+                                type="date"
+                                v-model="form.death_date"
+                            />
                         </label>
                     </div>
 
-                    <label class="block">
+                    <label
+                        v-if="packageCode !== 'free'"
+                        class="block"
+                    >
                         <span class="label">Главное фото</span>
-                        <input type="file" accept="image/*" class="input mt-1" @change="handleMainPhotoUpload" />
-                        <p v-if="uploadingMainPhoto" class="mt-2 text-sm text-slate-500">Загрузка...</p>
-                        <img v-if="form.main_photo" :src="form.main_photo" class="mt-4 h-56 w-full rounded-2xl object-cover" />
+                        <input
+                            type="file"
+                            accept="image/*"
+                            class="input mt-1"
+                            @change="handleMainPhotoUpload"
+                        />
+                        <p
+                            v-if="uploadingMainPhoto"
+                            class="mt-2 text-sm text-slate-500"
+                        >
+                            Загрузка...
+                        </p>
+                        <img
+                            v-if="form.main_photo"
+                            :src="form.main_photo"
+                            class="mt-4 h-56 w-full rounded-2xl object-cover"
+                        />
                     </label>
-                    
+
                     <label class="block">
                         <span class="label">Короткое описание</span>
-                        <textarea class="input mt-1 min-h-24" v-model="form.short_description"></textarea>
-                    </label>                    
+                        <textarea
+                            class="input mt-1 min-h-24"
+                            v-model="form.short_description"
+                            :maxlength="
+                                currentPlan.bioLimit
+                                    ? currentPlan.bioLimit
+                                        - form.biography.length
+                                        + form.short_description.length
+                                    : undefined
+                            "
+                        ></textarea>
+                        <span
+                            v-if="currentPlan.bioLimit"
+                            class="mt-1 block text-right text-xs text-slate-400"
+                        >
+                            {{ form.short_description.length + form.biography.length }}/{{ currentPlan.bioLimit }}
+                        </span>
+                    </label>
                 </section>
 
-                <section v-if="activeTab === 'facts'" class="card space-y-4">
+                <section
+                    v-if="activeTab === 'facts'"
+                    class="card space-y-4"
+                >
                     <div class="space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="label">Факты</span>
-                            <button type="button" class="btn-secondary !py-2" @click="addFact">Добавить факт</button>
+                            <button
+                                type="button"
+                                class="btn-secondary !py-2"
+                                @click="addFact"
+                            >
+                                Добавить факт
+                            </button>
                         </div>
 
                         <div
@@ -393,39 +619,171 @@ onBeforeUnmount(() => {
                     </div>
                 </section>
 
-                <section v-if="activeTab === 'bio'" class="card space-y-4">
+                <section
+                    v-if="activeTab === 'bio'"
+                    class="card space-y-4"
+                >
                     <h2 class="text-xl font-bold">Биография</h2>
-                    <textarea class="input min-h-48" v-model="form.biography"></textarea>
+
+                    <textarea
+                        class="input min-h-48"
+                        v-model="form.biography"
+                        :maxlength="
+                            currentPlan.bioLimit
+                                ? currentPlan.bioLimit
+                                    - form.short_description.length
+                                    + form.biography.length
+                                : undefined
+                        "
+                    ></textarea>
+
+                    <span
+                        v-if="currentPlan.bioLimit"
+                        class="block text-right text-xs text-slate-400"
+                    >
+                        {{ form.short_description.length + form.biography.length }}/{{ currentPlan.bioLimit }}
+                    </span>
                 </section>
 
-                <section v-if="activeTab === 'timeline'" class="card space-y-4">
+                <section
+                    v-if="activeTab === 'timeline'"
+                    class="card space-y-4"
+                >
                     <div class="flex justify-between">
                         <h2 class="text-xl font-bold">Хронология</h2>
-                        <button type="button" class="btn-secondary !py-2" @click="addTimeline">Добавить</button>
+                        <button
+                            type="button"
+                            class="btn-secondary !py-2"
+                            @click="addTimeline"
+                        >
+                            Добавить
+                        </button>
                     </div>
-                    <div v-for="(item, i) in form.timelines" :key="i" class="grid gap-3 rounded-2xl bg-slate-50 p-4">
-                        <input class="input" v-model="item.period" placeholder="Период" />
-                        <textarea class="input" v-model="item.description" placeholder="Описание"></textarea>
+
+                    <div
+                        v-for="(item, index) in form.timelines"
+                        :key="index"
+                        class="grid gap-3 rounded-2xl bg-slate-50 p-4"
+                    >
+                        <input
+                            class="input"
+                            v-model="item.period"
+                            placeholder="Период"
+                        />
+                        <textarea
+                            class="input"
+                            v-model="item.description"
+                            placeholder="Описание"
+                        ></textarea>
                     </div>
                 </section>
 
-                <section v-if="activeTab === 'photos'" class="card space-y-4">
+                <section
+                    v-if="activeTab === 'photos'"
+                    class="card space-y-4"
+                >
                     <div class="flex justify-between">
-                        <h2 class="text-xl font-bold">Фото</h2>
-
-                        <button type="button" class="btn-secondary !py-2" @click="addPhoto">Добавить</button>
+                        <h2 class="text-xl font-bold">Галерея</h2>
+                        <button
+                            type="button"
+                            class="btn-secondary !py-2"
+                            @click="addPhoto"
+                        >
+                            Добавить с подписью
+                        </button>
                     </div>
 
-                    <div v-for="(item, i) in form.photos" :key="i" class="grid gap-3 rounded-2xl bg-slate-50 p-4">
-                        <input type="file" accept="image/*" class="input" @change="(e) => handleGalleryPhotoUpload(e, item)" />
-                        <img v-if="item.image" :src="item.image" class="h-48 w-full rounded-2xl object-cover" />
-                        <input class="input" v-model="item.caption" placeholder="Подпись" />
+                    <div
+                        v-for="(item, index) in form.photos"
+                        :key="index"
+                        class="grid gap-3 rounded-2xl bg-slate-50 p-4"
+                    >
+                        <input
+                            class="input"
+                            v-model="item.caption"
+                            placeholder="Подпись"
+                        />
+                        <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,audio/mpeg,audio/mp4,audio/wav,audio/ogg"
+                            :disabled="uploadingAsset"
+                            class="input"
+                            @change="(event) => handleGalleryMediaUpload(event, item)"
+                        />
+                        <img
+                            v-if="item.image"
+                            :src="item.image"
+                            class="h-48 w-full rounded-2xl object-cover"
+                        />
+                    </div>
+
+                    <div class="border-t border-slate-100 pt-5">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <h3 class="font-bold">Фото, видео и аудио</h3>
+                                <p class="text-sm text-slate-500">
+                                    Галерея — до 100 МБ на тарифах «История» и «Наследие».
+                                    На «Наследии» для воспоминаний выделено ещё 100 МБ отдельно.
+                                </p>
+                            </div>
+
+                            <label class="btn-secondary cursor-pointer !py-2">
+                                {{ uploadingAsset ? 'Загрузка…' : 'Загрузить в галерею' }}
+                                <input
+                                    class="hidden"
+                                    type="file"
+                                    accept="image/*,video/mp4,video/quicktime,audio/mpeg,audio/mp4,audio/wav,audio/ogg"
+                                    :disabled="uploadingAsset || !id"
+                                    @change="handleAssetUpload"
+                                />
+                            </label>
+                        </div>
+
+                        <p
+                            v-if="!id"
+                            class="mt-3 text-xs text-amber-700"
+                        >
+                            Сначала сохраните анкету, чтобы загружать файлы.
+                        </p>
+
+                        <div
+                            v-if="assets.length"
+                            class="mt-4 space-y-3"
+                        >
+                            <div
+                                v-for="(asset, index) in assets"
+                                :key="asset.id"
+                                class="space-y-3 rounded-xl bg-slate-50 p-3 text-sm"
+                            >
+                                <img v-if="asset.type === 'image'" :src="asset.url" :alt="asset.caption || 'Фото из галереи'" class="max-h-64 w-full rounded-xl object-contain" />
+                                <video v-else-if="asset.type === 'video'" :src="asset.url" controls playsinline preload="metadata" class="max-h-64 w-full rounded-xl" />
+                                <audio v-else-if="asset.type === 'audio'" :src="asset.url" controls preload="metadata" class="w-full" />
+                                <a
+                                    class="truncate font-medium text-blue-700"
+                                    :href="asset.url"
+                                    target="_blank"
+                                >
+                                    {{ asset.caption || asset.url.split('/').pop() }}
+                                    · {{ asset.type }}
+                                </a>
+
+                                <button
+                                    type="button"
+                                    class="shrink-0 text-red-600"
+                                    @click="deleteAsset(asset, index)"
+                                >
+                                    Удалить
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
-                <section v-if="activeTab === 'life'" class="card space-y-4">
+                <section
+                    v-if="activeTab === 'life'"
+                    class="card space-y-4"
+                >
                     <div class="flex items-center justify-between">
-
                         <div>
                             <h2 class="text-xl font-bold">Этапы жизни</h2>
                         </div>
@@ -440,16 +798,13 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div
-                        v-for="(item, i) in form.life_sections"
-                        :key="i"
+                        v-for="(item, index) in form.life_sections"
+                        :key="index"
                         class="grid gap-3 rounded-2xl border border-gray-200 bg-slate-50 p-4"
                     >
-
                         <div class="grid gap-3 md:grid-cols-[180px_1fr]">
-
                             <label class="block">
                                 <span class="label">Заголовок</span>
-
                                 <input
                                     class="input mt-1 uppercase"
                                     v-model="item.title"
@@ -459,7 +814,6 @@ onBeforeUnmount(() => {
 
                             <label class="block">
                                 <span class="label">Описание</span>
-
                                 <textarea
                                     class="input mt-1 min-h-24"
                                     v-model="item.text"
@@ -472,7 +826,7 @@ onBeforeUnmount(() => {
                             <button
                                 type="button"
                                 class="text-sm text-red-500"
-                                @click="removeLifeSection(i)"
+                                @click="removeLifeSection(index)"
                             >
                                 Удалить
                             </button>
@@ -480,7 +834,10 @@ onBeforeUnmount(() => {
                     </div>
                 </section>
 
-                <section v-if="activeTab === 'qualities'" class="card space-y-4">
+                <section
+                    v-if="activeTab === 'qualities'"
+                    class="card space-y-4"
+                >
                     <div class="flex items-center justify-between">
                         <h2 class="text-xl font-bold">Качества</h2>
 
@@ -514,15 +871,24 @@ onBeforeUnmount(() => {
                     </div>
                 </section>
 
-                <section v-if="activeTab === 'quotes'" class="card space-y-4">
+                <section
+                    v-if="activeTab === 'quotes'"
+                    class="card space-y-4"
+                >
                     <div class="flex justify-between">
                         <h2 class="text-xl font-bold">Воспоминания</h2>
-                        <button type="button" class="btn-secondary !py-2" @click="addQuote">Добавить</button>
+                        <button
+                            type="button"
+                            class="btn-secondary !py-2"
+                            @click="addQuote"
+                        >
+                            Добавить
+                        </button>
                     </div>
 
                     <div
-                        v-for="(item, i) in form.quotes"
-                        :key="item.id || i"
+                        v-for="(item, index) in form.quotes"
+                        :key="item.id || index"
                         class="grid gap-3 rounded-2xl bg-slate-50 p-4"
                         :class="{
                             'border border-yellow-300 bg-yellow-50': item.status === 'pending',
@@ -551,17 +917,52 @@ onBeforeUnmount(() => {
                             <button
                                 type="button"
                                 class="text-sm text-red-500"
-                                @click="deleteQuote(item, i)"
+                                @click="deleteQuote(item, index)"
                             >
                                 Удалить
                             </button>
                         </div>
 
-                        <input class="input" v-model="item.author_name" placeholder="Автор" />
-                        <input class="input" v-model="item.author_relation" placeholder="Кем приходится" />
-                        <textarea class="input" v-model="item.text" placeholder="Текст"></textarea>
+                        <input
+                            class="input"
+                            v-model="item.author_name"
+                            placeholder="Автор"
+                        />
+                        <input
+                            class="input"
+                            v-model="item.author_relation"
+                            placeholder="Кем приходится"
+                        />
+                        <textarea
+                            class="input"
+                            v-model="item.text"
+                            placeholder="Текст"
+                        ></textarea>
 
-                        <div v-if="item.id" class="flex flex-wrap gap-3">
+                        <img
+                            v-if="item.media_url && item.media_url.match(/\.(jpg|jpeg|png|webp)(\?|$)/i)"
+                            :src="item.media_url"
+                            class="mt-4 max-h-80 rounded-2xl object-cover"
+                        />
+
+                        <video
+                            v-else-if="item.media_url && item.media_url.match(/\.(mp4|mov)(\?|$)/i)"
+                            :src="item.media_url"
+                            controls
+                            class="mt-4 w-full rounded-2xl"
+                        />
+
+                        <audio
+                            v-else-if="item.media_url"
+                            :src="item.media_url"
+                            controls
+                            class="mt-4 w-full"
+                        />
+
+                        <div
+                            v-if="item.id"
+                            class="flex flex-wrap gap-3"
+                        >
                             <button
                                 v-if="item.status !== 'approved'"
                                 type="button"
@@ -587,20 +988,76 @@ onBeforeUnmount(() => {
             <aside class="space-y-4">
                 <div class="card sticky top-6">
                     <h2 class="text-xl font-bold">Сохранение</h2>
+
+                    <div class="mt-3 rounded-2xl bg-slate-50 p-4">
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                            Текущий тариф
+                        </p>
+
+                        <p class="mt-1 font-bold">
+                            {{ currentPlan.name }}
+                        </p>
+
+                        <p class="mt-1 text-sm text-slate-500">
+                            {{
+                                currentPlan.bioLimit
+                                    ? `Биография до ${currentPlan.bioLimit} символов`
+                                    : currentPlan.media
+                                        ? 'Фото, видео и аудио'
+                                        : 'Фото-аватар и полная биография'
+                            }}
+                        </p>
+
+                        <router-link
+                            v-if="id"
+                            class="mt-3 inline-flex text-sm font-semibold text-blue-700"
+                            :to="`/dashboard/plans?memorialId=${id}`"
+                        >
+                            Сменить тариф или продлить →
+                        </router-link>
+
+                        <router-link
+                            v-else
+                            class="mt-3 inline-flex text-sm font-semibold text-blue-700"
+                            to="/dashboard/plans"
+                        >
+                            Посмотреть все тарифы →
+                        </router-link>
+                    </div>
+
                     <p class="mt-2 text-sm text-slate-500">
                         После сохранения можно публиковать страницу по ссылке.
-                    </p>                
-                    <p v-if="error" class="mt-3 text-sm text-red-600">{{ error }}</p>                    
-                    <button class="btn-primary mt-5 w-full">Сохранить</button>
+                    </p>
+
+                    <p
+                        v-if="error"
+                        class="mt-3 text-sm text-red-600"
+                    >
+                        {{ error }}
+                    </p>
+
+                    <button class="btn-primary mt-5 w-full">
+                        Сохранить
+                    </button>
                 </div>
 
                 <div class="card">
                     <h3 class="font-bold">Предпросмотр</h3>
+
                     <div class="mt-4 overflow-hidden rounded-2xl bg-[#0f1115] text-white">
-                        <img v-if="form.main_photo" :src="form.main_photo" class="h-48 w-full object-cover" />
-                            <div class="p-4">
-                            <p class="font-serif text-2xl">{{ form.full_name || 'ФИО' }}</p>
-                            <p class="text-sm text-white/60">{{ form.birth_date }} — {{ form.death_date }}</p>
+                        <img
+                            v-if="form.main_photo"
+                            :src="form.main_photo"
+                            class="h-48 w-full object-cover"
+                        />
+
+                        <div class="p-4">
+                            <p class="font-serif text-2xl">
+                                {{ form.full_name || 'ФИО' }}
+                            </p>
+                            <p class="text-sm text-white/60">
+                                {{ form.birth_date }} — {{ form.death_date }}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -613,9 +1070,11 @@ onBeforeUnmount(() => {
                     </p>
 
                     <div class="mt-4 flex justify-center">
-                        <div ref="qrBoxRef" class="rounded-2xl bg-white p-3 shadow">
+                        <div
+                            ref="qrBoxRef"
+                            class="rounded-2xl bg-white p-3 shadow"
+                        >
                             <QrcodeVue
-                                ref="qrRef"
                                 :value="publicUrl"
                                 :size="220"
                                 level="H"
